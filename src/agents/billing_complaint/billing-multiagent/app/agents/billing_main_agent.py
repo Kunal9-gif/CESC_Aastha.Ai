@@ -61,10 +61,15 @@ class BillingComplaintMainAgent:
 
         valid_intents = list(INTENT_OTP_POLICY.keys())
         system_prompts = [{"text": f"""
-You are a Billing Intent Classifier.
+You are a Billing Intent Classifier for an electricity company.
 
 You MUST choose the intent from the following list of valid intents:
 {valid_intents}
+
+CRITICAL RULES:
+1. If the user's message is highly specific (e.g. "my bill is high", "name change request"), map it to the exact matching intent.
+2. If the user's message is vague, broad, simply stating they have a generic problem (e.g., "mujhe issue h", "help", "I have a problem"), or just a greeting ("hi", "hello"), you MUST map it to "CLARIFICATION". Do NOT guess a specific issue like "METER_RELATED_ISSUE".
+3. Only output valid JSON.
 
 Return strict JSON:
 {{
