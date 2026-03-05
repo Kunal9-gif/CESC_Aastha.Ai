@@ -1,0 +1,27 @@
+import requests
+import json
+
+BASE_URL = "https://your-server-url.com/genSupplyCrmDkt"
+
+test_payloads = [
+    {"custid": "76000489534"},
+    {"custid": "76000489534", "comp_src": "XYZ"},
+    {"custid": "76000489534", "comp_src": "XYZ", "lcomp": "1"},
+    {"consumer_no": "123456", "comp_src": "XYZ", "lcomp": "1"},
+    {
+        "custid": "76000489534",
+        "consumer_no": "123456",
+        "mobile": "1234567890",
+        "comp_src": "XYZ",
+        "lcomp": "1"
+    }
+]
+
+for i, payload in enumerate(test_payloads, 1):
+    print(f"\nTest Case {i}")
+    print("Payload:", payload)
+
+    response = requests.post(BASE_URL, json=payload)
+
+    print("Status:", response.status_code)
+    print("Response:", response.text)
