@@ -24,48 +24,7 @@ aastha-web (Port 8001)          ← PRIMARY ENTRY — AI Orchestration + SSE
               └── razorpay-axis-service:8004
 ```
 
-## Service Dependency Graph
 
-```mermaid
-graph TD
-    AW[aastha-web :8001]
-    BD[billdesk-service :8002]
-    RZ[razorpay-service :8003]
-    RA[razorpay-axis-service :8004]
-    DDB1[(DynamoDB\nRazorpayPaymentOrders)]
-    DDB2[(DynamoDB\nRazorpayAxisPaymentOrders)]
-    DDB3[(DynamoDB\nRetryTracker)]
-    DDB4[(SQLite\nbilldesk_transactions.db)]
-    RZAPI[Razorpay API\napi.razorpay.com]
-    CESC[CESC Backend\nrlbsti_uat.php]
-    CESCAUTH[CESC Auth\ndice-uat.cesc.co.in]
-    BEDROCK[AWS Bedrock\nClaude Sonnet 4]
-    BILL_AGENT[Bill Payment\nStrands Agent]
-
-    AW -->|POST /create_order| RZ
-    AW -->|POST /create_order| RA
-    AW -->|POST /create-payment| BD
-    AW --> BEDROCK
-    AW --> BILL_AGENT
-
-    BILL_AGENT -->|HTTP| RZ
-    BILL_AGENT -->|HTTP| RA
-    BILL_AGENT -->|HTTP| BD
-
-    RZ --> DDB1
-    RZ --> DDB3
-    RZ --> RZAPI
-    RZ --> CESC
-    RZ --> CESCAUTH
-
-    RA --> DDB2
-    RA --> DDB3
-    RA --> RZAPI
-    RA --> CESC
-    RA --> CESCAUTH
-
-    BD --> DDB4
-```
 
 ## Docker Infrastructure (Verified)
 
