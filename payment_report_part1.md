@@ -1,7 +1,6 @@
 # AASTHA AI — Bill Payment System: Reviewer-Grade Intelligence Report
 ## Part 1: Architecture · API Reference · Payment Flow Analysis
 
-> **VERIFIED** — All findings sourced from direct source code inspection.
 
 ---
 
@@ -26,7 +25,7 @@ aastha-web (Port 8001)          ← PRIMARY ENTRY — AI Orchestration + SSE
 
 
 
-## Docker Infrastructure (Verified)
+## Docker Infrastructure
 
 | Container | Image Built From | Port | Network | Restart | Health Check |
 |---|---|---|---|---|---|
