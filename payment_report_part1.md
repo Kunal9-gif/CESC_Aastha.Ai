@@ -1,4 +1,4 @@
-# AASTHA AI — Bill Payment System: Reviewer-Grade Intelligence Report
+# AASTHA AI — Bill Payment System: Review Report
 ## Part 1: Architecture · API Reference · Payment Flow Analysis
 
 > **VERIFIED** — All findings sourced from direct source code inspection.
