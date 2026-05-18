@@ -1,4 +1,4 @@
-# AASTHA AI — Bill Payment System: Reviewer-Grade Intelligence Report
+# AASTHA AI — Bill Payment System:
 ## Part 2: Database · Security · Functions · Observability · Failures · FAQ
 
 ---
@@ -275,48 +275,6 @@ send_payment_notification(user_id, cid, message)
 | SSE notification sent | INFO | ✅ `HTTP {status_code}` |
 | RetryTracker update | INFO + WARNING | ✅ |
 
-## Observability Gaps
-
-| Gap | Risk | Recommendation |
-|---|---|---|
-| No request ID / correlation ID | Cannot trace a specific payment across logs | Add `X-Request-ID` header injection middleware |
-| No structured JSON logging | CloudWatch Insights queries fail on plaintext | Use `python-json-logger` |
-| Health check hits `/docs` not `/health` | Swagger rendering success ≠ service health | Change to `GET /health` |
-| No metric emission | Cannot alert on payment failure rate | Add `cloudwatch.put_metric_data()` on each failure |
-| No distributed tracing | Cannot trace cross-service calls | Add AWS X-Ray SDK |
-| `print()` mixed with `logger` | Inconsistent log stream | Replace all `print()` with `logger` |
-
----
-
-# FAILURE_MODE_ANALYSIS
-
-## Critical Failure Paths
-
-### Payment Success Handler Failures
-| Failure Point | Step | Recovery | Impact |
-|---|---|---|---|
-| Signature verification fails | Step 1 | Returns 400 — clean rejection | User sees error page |
-| Razorpay payment detail fetch fails (Step 4) | Step 4 | `try/except` — logged, continues to HTML | CESC not synced, notification may fail |
-| CESC JWT auth fails | Step 6 | Returns `{success: False}` — logged only | Payment captured but CESC not updated |
-| SSE notification fails | Step 7 | `try/except` — logged only | User doesn't get push notification |
-| Razorpay retries callback | Step 1 | **No idempotency** — all steps re-execute | Double CESC sync, double notification |
-
-### Polling Worker Failures
-| Failure | Recovery | Impact |
-|---|---|---|
-| DynamoDB scan throttled | `except Exception` — logged, skips tick | Orders not polled for 45s |
-| Razorpay `order.payments()` fails | Per-order `try/except` | One order skipped, others continue |
-| CESC sync fails in worker | Logged only | Order status updated but CESC not synced |
-| APScheduler thread dies | No restart — daemon thread | Worker stops silently, no alerting |
-
-### Infrastructure Failures
-| Failure | Recovery | Impact |
-|---|---|---|
-| `aastha-web` container restarts | `restart: unless-stopped` — Docker restarts | In-memory SSE connections lost, pending jobs handled by offline fallback |
-| `razorpay-service` restarts | `restart: unless-stopped` — auto restart | APScheduler re-starts via lifespan, DynamoDB state persists |
-| DynamoDB outage | No circuit breaker — `Exception` logged | All order creation and status updates fail silently |
-| Razorpay API outage | `if not client: return` in worker | Worker no-ops; orders stay `created` until API recovers |
-
 ---
 
 # SCALABILITY_ANALYSIS
@@ -331,56 +289,3 @@ send_payment_notification(user_id, cid, message)
 | **Retry tracker contention** | Shared DynamoDB table, no locking | Race condition on concurrent failures | Use DynamoDB conditional updates (`ConditionExpression`) |
 
 ---
-
-# REVIEWER_FAQ
-
-**Q1: Why microservices for payment gateways?**
-Each gateway (BillDesk, Razorpay RBL, Razorpay Axis) has different credentials, APIs, callback URLs, and DynamoDB tables. Isolation means a crash in one service cannot affect others. It also allows independent deployment when credentials rotate.
-
-**Q2: Why separate RBL and Axis services?**
-CESC may route different bill types or customer segments to different bank gateways. Axis Bank and RBL Bank have different Razorpay key pairs. Keeping them separate allows independent scaling and credential management.
-
-**Q3: How is idempotency handled?**
-**Partial.** The `last_notified_payment_id` in DynamoDB prevents duplicate SSE notifications for the same failed payment. However, the `/success` callback has no idempotency guard — a Razorpay callback retry would re-execute CESC sync and notifications.
-
-**Q4: How are duplicate payments prevented?**
-The `RetryTracker` blocks new order creation after 3 failures. However, a user can still try multiple times within the limit. The Razorpay SDK prevents duplicate captures for the same `order_id`.
-
-**Q5: How are webhooks verified?**
-Razorpay does not use traditional webhooks in this implementation — it uses a browser form POST to `/success`. The authenticity is verified via HMAC-SHA256 signature using `RAZORPAY_KEY_SECRET`. Invalid signatures return HTTP 400.
-
-**Q6: What happens if the `/success` callback fails mid-way?**
-- If the DynamoDB update fails: order stays `created`, polling worker will eventually detect `captured` status via Razorpay API and recover.
-- If CESC sync fails: `cesc_synced` stays `0`, but no automated retry exists. Manual re-sync is required.
-- If SSE notification fails: User doesn't get push notification; they can check status manually.
-
-**Q7: How are retries handled?**
-Two layers: (1) APScheduler polls every 45s and detects status changes via Razorpay API. (2) RetryTracker limits payment attempts to 3 per cooldown window. There is no automatic retry for failed CESC sync.
-
-**Q8: How are transactions reconciled?**
-The `cesc_synced` field acts as a reconciliation flag. The polling worker calls `_sync_with_cesc()` for both success and failure states, setting `cesc_synced=1` on success. Orders with `cesc_synced=0` and terminal status are candidates for manual reconciliation.
-
-**Q9: How is scalability achieved?**
-Currently limited. The services are stateless (DynamoDB handles state), enabling horizontal scaling of the API layer. The APScheduler polling creates a challenge — multiple instances would run duplicate polling jobs. A distributed lock or dedicated scheduler is needed for true horizontal scaling.
-
-**Q10: What are the security controls?**
-(1) HMAC signature on payment callbacks. (2) `X-Internal-Secret` for service-to-service calls. (3) RetryTracker rate limiting. (4) Razorpay API accessed with Basic Auth. (5) CESC accessed with JWT (refreshed per request).
-
-**Q11: How is observability implemented?**
-Python `logging` module with INFO/ERROR levels. Logs go to Docker stdout (captured by CloudWatch if configured). No structured logging, no correlation IDs, no metrics. Health checks exist but are shallow.
-
-**Q12: How is fault tolerance handled?**
-`restart: unless-stopped` in Docker Compose handles container crashes. `try/except` blocks in the polling worker ensure one order failure doesn't crash the entire polling cycle. DynamoDB state persists across restarts.
-
-**Q13: What are the known limitations?**
-(1) No idempotency on `/success` callback. (2) `table.scan()` does not scale. (3) CESC sync is synchronous and blocking. (4) APScheduler cannot run in multi-instance mode. (5) No circuit breaker for CESC outages. (6) UAT IP hardcoded in CESC payload.
-
-**Q14: What are the biggest technical risks?**
-(1) Production CESC URL is UAT (`rlbsti_uat.php`) — payments won't reconcile in production. (2) Test Razorpay keys in `.env` — live payments impossible. (3) No idempotency on callback — double billing risk. (4) No alerting when APScheduler thread dies — polling stops silently.
-
-**Q15: What would you improve first?**
-1. Replace `table.scan()` with DynamoDB GSI queries.
-2. Add idempotency key to `/success` handler (check if `status == "captured"` before re-processing).
-3. Move CESC sync to an async background task (remove from the synchronous callback chain).
-4. Add structured JSON logging with correlation IDs.
-5. Replace UAT CESC URL with env-configurable production URL.
